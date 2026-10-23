@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, Enum, ForeignKey, Text
+from sqlalchemy import Column, String, Integer, Boolean, DateTime, Enum, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 import uuid
 from datetime import datetime
@@ -24,8 +24,11 @@ class User(Base):
 
 class Indicator(Base):
     __tablename__ = "indicators"
+    __table_args__ = (
+        UniqueConstraint('value', 'type', name='uq_indicator_value_type'),
+    )
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    value = Column(String, unique=True, index=True, nullable=False)
+    value = Column(String, nullable=False)
     type = Column(String, nullable=False) # ip, domain, url, hash_md5, hash_sha256
     severity_score = Column(Integer, default=0)
     confidence = Column(Integer, default=0)
@@ -42,3 +45,20 @@ class AuditLog(Base):
     resource = Column(String, nullable=False)
     details = Column(Text, nullable=True)
     timestamp = Column(DateTime, default=datetime.utcnow)
+
+class Feed(Base):
+    __tablename__ = "feeds"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String, unique=True, nullable=False)
+    url = Column(String, nullable=False)
+    feed_type = Column(String, nullable=False) # e.g., 'urlhaus', 'otx'
+    is_active = Column(Boolean, default=True)
+
+class IndicatorSource(Base):
+    __tablename__ = "indicator_sources"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    indicator_id = Column(UUID(as_uuid=True), ForeignKey("indicators.id"), nullable=False)
+    feed_id = Column(UUID(as_uuid=True), ForeignKey("feeds.id"), nullable=False)
+    external_id = Column(String, nullable=True)
+    first_seen = Column(DateTime, default=datetime.utcnow)
+    last_seen = Column(DateTime, default=datetime.utcnow)

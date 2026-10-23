@@ -1,12 +1,14 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordRequestForm
 from datetime import timedelta
 import redis.asyncio as redis
 from elasticsearch import AsyncElasticsearch
 from sqlalchemy import select
+import uuid
 
 from .config import settings
 from . import models, database, auth, schemas, dependencies
+from .feeds.urlhaus import URLHausParser
 
 app = FastAPI(title="ThreatLens API", version="0.1.0")
 
@@ -78,3 +80,48 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: database.A
 @app.get("/api/v1/users/me", response_model=schemas.UserResponse)
 async def get_me(current_user: models.User = Depends(dependencies.get_current_user)):
     return current_user
+
+@app.post("/api/v1/feeds/ingest/urlhaus")
+async def trigger_urlhaus_ingestion(
+    background_tasks: BackgroundTasks, 
+    db: database.AsyncSession = Depends(database.get_db)
+):
+    # 1. Find or Create the URLHaus Feed config in DB
+    result = await db.execute(select(models.Feed).where(models.Feed.name == "URLhaus"))
+    feed = result.scalar_one_or_none()
+    
+    if not feed:
+        feed = models.Feed(name="URLhaus", url="https://urlhaus-api.abuse.ch/", feed_type="urlhaus")
+        db.add(feed)
+        await db.commit()
+        await db.refresh(feed)
+
+    # 2. Queue the background task
+    background_tasks.add_task(run_ingestion, feed.id)
+    
+    return {"message": "URLHaus ingestion started in background."}
+
+# Helper function to run outside the request context
+async def run_ingestion(feed_id: uuid.UUID):
+    from .database import AsyncSessionLocal
+    
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(models.Feed).where(models.Feed.id == feed_id))
+        feed = result.scalar_one()
+        
+        parser = URLHausParser(db, feed)
+        await parser.process()
+        print("✅ URLHaus ingestion complete!")
+
+@app.get("/api/v1/indicators")
+async def get_indicators(db: database.AsyncSession = Depends(database.get_db)):
+    result = await db.execute(select(models.Indicator))
+    indicators = result.scalars().all()
+    return [
+        {
+            "id": str(i.id), 
+            "value": i.value, 
+            "type": i.type, 
+            "severity_score": i.severity_score
+        } for i in indicators
+    ][:50] # Limit to 50 for the UI
