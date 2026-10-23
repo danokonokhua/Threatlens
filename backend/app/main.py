@@ -1,3 +1,5 @@
+from .feeds.feodo import FeodoParser
+from .feeds.malwarebazaar import MalwareBazaarParser
 from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordRequestForm
 from datetime import timedelta
@@ -125,3 +127,46 @@ async def get_indicators(db: database.AsyncSession = Depends(database.get_db)):
             "severity_score": i.severity_score
         } for i in indicators
     ][:50] # Limit to 50 for the UI
+
+@app.post("/api/v1/feeds/ingest/feodo")
+async def trigger_feodo_ingestion(background_tasks: BackgroundTasks, db: database.AsyncSession = Depends(database.get_db)):
+    result = await db.execute(select(models.Feed).where(models.Feed.name == "Feodo Tracker"))
+    feed = result.scalar_one_or_none()
+    if not feed:
+        feed = models.Feed(name="Feodo Tracker", url="https://feodotracker.abuse.ch/", feed_type="feodo")
+        db.add(feed)
+        await db.commit()
+        await db.refresh(feed)
+    background_tasks.add_task(run_ingestion_task, feed.id, "feodo")
+    return {"message": "Feodo ingestion started."}
+
+@app.post("/api/v1/feeds/ingest/malwarebazaar")
+async def trigger_mb_ingestion(background_tasks: BackgroundTasks, db: database.AsyncSession = Depends(database.get_db)):
+    result = await db.execute(select(models.Feed).where(models.Feed.name == "MalwareBazaar"))
+    feed = result.scalar_one_or_none()
+    if not feed:
+        feed = models.Feed(name="MalwareBazaar", url="https://bazaar.abuse.ch/", feed_type="malwarebazaar")
+        db.add(feed)
+        await db.commit()
+        await db.refresh(feed)
+    background_tasks.add_task(run_ingestion_task, feed.id, "malwarebazaar")
+    return {"message": "MalwareBazaar ingestion started."}
+
+# Update the helper function to handle different feed types
+async def run_ingestion_task(feed_id: uuid.UUID, feed_type: str):
+    from .database import AsyncSessionLocal
+    
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(models.Feed).where(models.Feed.id == feed_id))
+        feed = result.scalar_one()
+        
+        if feed_type == "urlhaus":
+            from .feeds.urlhaus import URLHausParser
+            parser = URLHausParser(db, feed)
+        elif feed_type == "feodo":
+            parser = FeodoParser(db, feed)
+        elif feed_type == "malwarebazaar":
+            parser = MalwareBazaarParser(db, feed)
+            
+        await parser.process()
+        print(f"✅ {feed_type} ingestion complete!")

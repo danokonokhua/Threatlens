@@ -1,8 +1,10 @@
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from .. import models
+from ..services.scoring import calculate_severity_score
+from ..services.enrichment import enrich_indicator
 from datetime import datetime
 
 class BaseFeedParser(ABC):
@@ -22,10 +24,13 @@ class BaseFeedParser(ABC):
         raw_data = await self.fetch_data()
         for item in raw_data:
             normalized = self.normalize(item)
-            await self.upsert_indicator(normalized)
+            await self.upsert_and_enrich(normalized)
 
-    async def upsert_indicator(self, data: Dict[str, Any]):
-        # 1. Try to find existing indicator (Deduplication)
+    async def upsert_and_enrich(self, data: Dict[str, Any]):
+        # FIX: Extract external_id so it doesn't crash the Indicator model
+        external_id = data.pop("external_id", None)
+
+        # 1. Deduplication Check
         result = await self.db.execute(
             select(models.Indicator).where(
                 models.Indicator.value == data["value"],
@@ -35,24 +40,42 @@ class BaseFeedParser(ABC):
         indicator = result.scalar_one_or_none()
 
         if not indicator:
-            # Create new
+            # Create new indicator (data now only contains valid columns)
             indicator = models.Indicator(**data)
             self.db.add(indicator)
             await self.db.flush() # Flush to get the ID
+            is_new = True
         else:
             # Update existing
             indicator.last_seen = datetime.utcnow()
-            if data["severity_score"] > indicator.severity_score:
-                indicator.severity_score = data["severity_score"]
+            is_new = False
 
-        # 2. Add Provenance (IndicatorSource)
+        # 2. Calculate Multi-Source Count for Scoring
+        source_count_result = await self.db.execute(
+            select(func.count(models.IndicatorSource.indicator_id)).where(
+                models.IndicatorSource.indicator_id == indicator.id
+            )
+        )
+        source_count = source_count_result.scalar() + 1
+
+        # 3. Apply Scoring Engine
+        indicator.severity_score = calculate_severity_score(
+            base_severity=data.get("severity_score", 50),
+            source_confidence=data.get("confidence", 50),
+            last_seen=indicator.last_seen,
+            source_count=source_count
+        )
+
+        # 4. Add Provenance (IndicatorSource)
         source = models.IndicatorSource(
             indicator_id=indicator.id,
             feed_id=self.feed.id,
-            external_id=data.get("external_id"),
+            external_id=external_id,
             last_seen=datetime.utcnow()
         )
         self.db.add(source)
-        
-        # FIXED: This must be indented inside the method!
-        await self.db.commit() 
+        await self.db.commit()
+
+        # 5. Trigger Enrichment (Only if new)
+        if is_new:
+            await enrich_indicator(self.db, indicator)

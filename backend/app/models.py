@@ -62,3 +62,13 @@ class IndicatorSource(Base):
     external_id = Column(String, nullable=True)
     first_seen = Column(DateTime, default=datetime.utcnow)
     last_seen = Column(DateTime, default=datetime.utcnow)
+
+class Enrichment(Base):
+    __tablename__ = "enrichments"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    indicator_id = Column(UUID(as_uuid=True), ForeignKey("indicators.id"), nullable=False)
+    source = Column(String, nullable=False) # e.g., 'abuseipdb', 'virustotal'
+    verdict = Column(String, nullable=True) # e.g., 'malicious', 'clean'
+    confidence = Column(Integer, nullable=True)
+    raw_data = Column(Text, nullable=True) # Store JSON response as string
+    created_at = Column(DateTime, default=datetime.utcnow)
