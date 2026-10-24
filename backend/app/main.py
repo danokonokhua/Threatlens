@@ -1,3 +1,4 @@
+from .services.es_sync import create_index_if_not_exists, search_indicators
 from .feeds.feodo import FeodoParser
 from .feeds.malwarebazaar import MalwareBazaarParser
 from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks
@@ -20,9 +21,12 @@ es_client = AsyncElasticsearch(hosts=[settings.ELASTICSEARCH_URL])
 
 @app.on_event("startup")
 async def startup_event():
-    # Auto-create tables on startup
+    # 1. Auto-create PostgreSQL tables
     async with database.engine.begin() as conn:
         await conn.run_sync(models.Base.metadata.create_all)
+    
+    # 2. Auto-create Elasticsearch index
+    await create_index_if_not_exists()
 
 @app.get("/health")
 async def health_check():
@@ -170,3 +174,35 @@ async def run_ingestion_task(feed_id: uuid.UUID, feed_type: str):
             
         await parser.process()
         print(f"✅ {feed_type} ingestion complete!")
+
+@app.get("/api/v1/search")
+async def search_intelligence(
+    q: str = "",
+    type: str = "",
+    min_score: int = 0,
+    status: str = "active",
+    size: int = 50,
+    current_user: models.User = Depends(dependencies.get_current_user)
+):
+    """
+    FR-25: Full-text and faceted search across all indicators with sub-second response.
+    """
+    import time
+    start_time = time.time()
+    
+    results = await search_indicators(
+        query=q,
+        type_filter=type,
+        min_score=min_score,
+        status_filter=status,
+        size=size
+    )
+    
+    latency_ms = (time.time() - start_time) * 1000
+    
+    return {
+        "results": results,
+        "count": len(results),
+        "latency_ms": round(latency_ms, 2),
+        "query_params": {"q": q, "type": type, "min_score": min_score, "status": status}
+    }

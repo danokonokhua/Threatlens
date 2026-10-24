@@ -1,3 +1,4 @@
+from ..services.es_sync import sync_indicator_to_es
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -75,6 +76,20 @@ class BaseFeedParser(ABC):
         )
         self.db.add(source)
         await self.db.commit()
+                # 6. Sync to Elasticsearch for immediate searchability
+        # Build a flat dict for ES
+        es_doc = {
+            "id": str(indicator.id),
+            "value": indicator.value,
+            "type": indicator.type,
+            "severity_score": indicator.severity_score,
+            "confidence": indicator.confidence,
+            "status": indicator.status,
+            "first_seen": indicator.first_seen.isoformat() if indicator.first_seen else None,
+            "last_seen": indicator.last_seen.isoformat() if indicator.last_seen else None,
+            "sources": [self.feed.name] # Simplified for MVP; in prod, aggregate all sources
+        }
+        await sync_indicator_to_es(es_doc)
 
         # 5. Trigger Enrichment (Only if new)
         if is_new:
