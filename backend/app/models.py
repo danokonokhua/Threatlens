@@ -1,4 +1,5 @@
 from sqlalchemy import Column, String, Integer, Boolean, DateTime, Enum, ForeignKey, Text, UniqueConstraint
+from sqlalchemy.orm import relationship 
 from sqlalchemy.dialects.postgresql import UUID
 import uuid
 from datetime import datetime
@@ -72,3 +73,35 @@ class Enrichment(Base):
     confidence = Column(Integer, nullable=True)
     raw_data = Column(Text, nullable=True) # Store JSON response as string
     created_at = Column(DateTime, default=datetime.utcnow)
+
+class AlertRule(Base):
+    __tablename__ = "alert_rules"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    min_severity_score = Column(Integer, nullable=True)
+    indicator_type = Column(String, nullable=True)  # ip, domain, url, hash
+    required_tag = Column(String, nullable=True)
+    severity_level = Column(String, default="medium")  # low, medium, high, critical
+    is_active = Column(Boolean, default=True)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class Alert(Base):
+    __tablename__ = "alerts"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    indicator_id = Column(UUID(as_uuid=True), ForeignKey("indicators.id"), nullable=False)
+    rule_id = Column(UUID(as_uuid=True), ForeignKey("alert_rules.id"), nullable=True)
+    severity = Column(String, nullable=False)  # low, medium, high, critical
+    status = Column(String, default="new")  # new, acknowledged, in-progress, resolved, closed
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    assigned_to = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    acknowledged_at = Column(DateTime, nullable=True)
+    resolved_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships (This fixes the AttributeError!)
+    indicator = relationship("Indicator", backref="alerts")
+    rule = relationship("AlertRule", backref="alerts")
