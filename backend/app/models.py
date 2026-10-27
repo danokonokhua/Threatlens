@@ -121,3 +121,35 @@ class Incident(Base):
 
     # Relationship to alerts
     alerts = relationship("Alert", back_populates="incident", lazy="selectin")
+
+class HuntRule(Base):
+    __tablename__ = "hunt_rules"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    severity_threshold = Column(Integer, default=0) # e.g., find indicators > 80
+    indicator_type = Column(String, nullable=True) # e.g., 'ip', 'domain', or null for all
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class HuntExecution(Base):
+    __tablename__ = "hunt_executions"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    rule_id = Column(UUID(as_uuid=True), ForeignKey("hunt_rules.id"), nullable=False)
+    status = Column(String, default="completed") # pending, running, completed, failed
+    matches_count = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    rule = relationship("HuntRule", backref="executions")
+    matches = relationship("HuntMatch", back_populates="execution", lazy="selectin")
+
+class HuntMatch(Base):
+    __tablename__ = "hunt_matches"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    execution_id = Column(UUID(as_uuid=True), ForeignKey("hunt_executions.id"), nullable=False)
+    indicator_id = Column(UUID(as_uuid=True), ForeignKey("indicators.id"), nullable=False)
+    
+    # Relationships
+    execution = relationship("HuntExecution", back_populates="matches")
+    indicator = relationship("Indicator", backref="hunt_matches")

@@ -180,6 +180,12 @@ async def run_ingestion_task(feed_id: uuid.UUID, feed_type: str):
         await parser.process()
         print(f"✅ {feed_type} ingestion complete!")
 
+class HuntRuleCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    severity_threshold: int = 0
+    indicator_type: Optional[str] = None
+
 # ==========================================
 # INDICATOR & SEARCH ENDPOINTS
 # ==========================================
@@ -540,6 +546,98 @@ async def add_alert_to_incident(
     alert.incident_id = incident_id
     await db.commit()
     return {"message": "Alert linked to incident"}
+
+# --- Threat Hunting Endpoints ---
+
+@app.post("/api/v1/hunts/rules")
+async def create_hunt_rule(
+    rule: HuntRuleCreate, 
+    db: database.AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(dependencies.get_current_user)
+):
+    """Define a new proactive hunt rule."""
+    new_rule = models.HuntRule(
+        name=rule.name,
+        description=rule.description,
+        severity_threshold=rule.severity_threshold,
+        indicator_type=rule.indicator_type,
+        created_by=current_user.id
+    )
+    db.add(new_rule)
+    await db.commit()
+    await db.refresh(new_rule)
+    return {"id": str(new_rule.id), "name": new_rule.name, "message": "Hunt rule created"}
+
+@app.post("/api/v1/hunts/rules/{rule_id}/execute")
+async def execute_hunt(
+    rule_id: uuid.UUID, 
+    db: database.AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(dependencies.get_current_user)
+):
+    """Run a hunt rule against the database to find matches."""
+    # 1. Get Rule
+    result = await db.execute(select(models.HuntRule).where(models.HuntRule.id == rule_id))
+    rule = result.scalar_one_or_none()
+    if not rule: raise HTTPException(status_code=404, detail="Rule not found")
+
+    # 2. Create Execution record
+    execution = models.HuntExecution(rule_id=rule_id, status="running")
+    db.add(execution)
+    await db.flush() # Get ID
+
+    # 3. Run the "Hunt" (Query DB)
+    query = select(models.Indicator).where(models.Indicator.severity_score >= rule.severity_threshold)
+    if rule.indicator_type:
+        query = query.where(models.Indicator.type == rule.indicator_type)
+    
+    ind_result = await db.execute(query)
+    indicators = ind_result.scalars().all()
+
+    # 4. Save Matches
+    for ind in indicators:
+        match = models.HuntMatch(execution_id=execution.id, indicator_id=ind.id)
+        db.add(match)
+    
+    execution.status = "completed"
+    execution.matches_count = len(indicators)
+    await db.commit()
+
+    return {
+        "execution_id": str(execution.id), 
+        "matches_found": len(indicators), 
+        "message": "Hunt completed successfully"
+    }
+
+@app.get("/api/v1/hunts/executions/{execution_id}")
+async def get_hunt_results(
+    execution_id: uuid.UUID, 
+    db: database.AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(dependencies.get_current_user)
+):
+    """View the specific indicators found by a hunt execution."""
+    result = await db.execute(select(models.HuntExecution).where(models.HuntExecution.id == execution_id))
+    execution = result.scalar_one_or_none()
+    if not execution: raise HTTPException(status_code=404, detail="Execution not found")
+    
+    # Fetch details of matched indicators
+    match_indicator_ids = [m.indicator_id for m in execution.matches]
+    ind_details = []
+    
+    if match_indicator_ids:
+        ind_result = await db.execute(select(models.Indicator).where(models.Indicator.id.in_(match_indicator_ids)))
+        indicators = ind_result.scalars().all()
+        ind_details = [
+            {"id": str(i.id), "value": i.value, "type": i.type, "score": i.severity_score} 
+            for i in indicators
+        ]
+
+    return {
+        "execution_id": str(execution.id),
+        "rule_id": str(execution.rule_id),
+        "status": execution.status,
+        "matches_count": execution.matches_count,
+        "indicators_found": ind_details
+    }
 
 # ==========================================
 # REAL-TIME WEBSOCKET ENDPOINT
