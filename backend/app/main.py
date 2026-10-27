@@ -1,3 +1,6 @@
+from sqlalchemy import func
+from pydantic import BaseModel
+from typing import Optional
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import selectinload
 from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks, WebSocket, WebSocketDisconnect
@@ -320,6 +323,223 @@ async def force_alert_creation(
         "indicator_value": indicator.value,
         "severity_score": indicator.severity_score
     }
+
+from pydantic import BaseModel
+from typing import Optional
+
+# Pydantic schemas for Incidents
+class IncidentCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    severity: str = "medium"
+
+class IncidentResponse(BaseModel):
+    id: str
+    title: str
+    description: Optional[str]
+    status: str
+    severity: str
+    alert_count: int
+    created_at: str
+
+    class Config:
+        from_attributes = True
+
+@app.post("/api/v1/incidents", response_model=IncidentResponse)
+async def create_incident(
+    incident: IncidentCreate,
+    db: database.AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(dependencies.get_current_user)
+):
+    """Create a new investigation incident."""
+    new_incident = models.Incident(
+        title=incident.title,
+        description=incident.description,
+        severity=incident.severity,
+        status="open"
+    )
+    db.add(new_incident)
+    await db.commit()
+    await db.refresh(new_incident)
+    
+    return {
+        "id": str(new_incident.id),
+        "title": new_incident.title,
+        "description": new_incident.description,
+        "status": new_incident.status,
+        "severity": new_incident.severity,
+        "alert_count": 0,
+        "created_at": new_incident.created_at.isoformat()
+    }
+
+@app.get("/api/v1/incidents")
+async def list_incidents(
+    db: database.AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(dependencies.get_current_user)
+):
+    """List all incidents with alert counts."""
+    # We use a raw SQL approach or simple loop for MVP simplicity
+    result = await db.execute(select(models.Incident).order_by(models.Incident.created_at.desc()))
+    incidents = result.scalars().all()
+    
+    response = []
+    for inc in incidents:
+        # Count alerts linked to this incident
+        alert_count = await db.execute(select(func.count(models.Alert.id)).where(models.Alert.incident_id == inc.id))
+        count = alert_count.scalar()
+        
+        response.append({
+            "id": str(inc.id),
+            "title": inc.title,
+            "description": inc.description,
+            "status": inc.status,
+            "severity": inc.severity,
+            "alert_count": count,
+            "created_at": inc.created_at.isoformat()
+        })
+    return response
+
+@app.patch("/api/v1/incidents/{incident_id}")
+async def update_incident_status(
+    incident_id: uuid.UUID,
+    status: str,
+    db: database.AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(dependencies.get_current_user)
+):
+    """Update incident status (e.g., to 'investigating' or 'resolved')."""
+    result = await db.execute(select(models.Incident).where(models.Incident.id == incident_id))
+    incident = result.scalar_one_or_none()
+    
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+        
+    incident.status = status
+    await db.commit()
+    return {"message": f"Incident status updated to {status}"}
+
+@app.post("/api/v1/incidents/{incident_id}/alerts/{alert_id}")
+async def add_alert_to_incident(
+    incident_id: uuid.UUID,
+    alert_id: uuid.UUID,
+    db: database.AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(dependencies.get_current_user)
+):
+    """Link an existing alert to an incident for investigation."""
+    # 1. Check Incident exists
+    inc_result = await db.execute(select(models.Incident).where(models.Incident.id == incident_id))
+    incident = inc_result.scalar_one_or_none()
+    if not incident: raise HTTPException(status_code=404, detail="Incident not found")
+
+    # 2. Check Alert exists
+    alert_result = await db.execute(select(models.Alert).where(models.Alert.id == alert_id))
+    alert = alert_result.scalar_one_or_none()
+    if not alert: raise HTTPException(status_code=404, detail="Alert not found")
+
+    # 3. Link them
+    alert.incident_id = incident_id
+    await db.commit()
+    return {"message": "Alert linked to incident"}
+
+# --- Incident Schemas ---
+class IncidentCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    severity: str = "medium"
+
+# --- Incident Endpoints ---
+@app.post("/api/v1/incidents")
+async def create_incident(
+    incident: IncidentCreate,
+    db: database.AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(dependencies.get_current_user)
+):
+    """Create a new investigation incident."""
+    new_incident = models.Incident(
+        title=incident.title,
+        description=incident.description,
+        severity=incident.severity,
+        status="open"
+    )
+    db.add(new_incident)
+    await db.commit()
+    await db.refresh(new_incident)
+    
+    return {
+        "id": str(new_incident.id),
+        "title": new_incident.title,
+        "description": new_incident.description,
+        "status": new_incident.status,
+        "severity": new_incident.severity,
+        "alert_count": 0,
+        "created_at": new_incident.created_at.isoformat()
+    }
+
+@app.get("/api/v1/incidents")
+async def list_incidents(
+    db: database.AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(dependencies.get_current_user)
+):
+    """List all incidents with alert counts."""
+    result = await db.execute(select(models.Incident).order_by(models.Incident.created_at.desc()))
+    incidents = result.scalars().all()
+    
+    response = []
+    for inc in incidents:
+        # Count alerts linked to this incident
+        alert_count_result = await db.execute(select(func.count(models.Alert.id)).where(models.Alert.incident_id == inc.id))
+        count = alert_count_result.scalar()
+        
+        response.append({
+            "id": str(inc.id),
+            "title": inc.title,
+            "description": inc.description,
+            "status": inc.status,
+            "severity": inc.severity,
+            "alert_count": count,
+            "created_at": inc.created_at.isoformat()
+        })
+    return response
+
+@app.patch("/api/v1/incidents/{incident_id}")
+async def update_incident_status(
+    incident_id: uuid.UUID,
+    status: str,
+    db: database.AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(dependencies.get_current_user)
+):
+    """Update incident status (e.g., to 'investigating' or 'resolved')."""
+    result = await db.execute(select(models.Incident).where(models.Incident.id == incident_id))
+    incident = result.scalar_one_or_none()
+    
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+        
+    incident.status = status
+    await db.commit()
+    return {"message": f"Incident status updated to {status}"}
+
+@app.post("/api/v1/incidents/{incident_id}/alerts/{alert_id}")
+async def add_alert_to_incident(
+    incident_id: uuid.UUID,
+    alert_id: uuid.UUID,
+    db: database.AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(dependencies.get_current_user)
+):
+    """Link an existing alert to an incident for investigation."""
+    # 1. Check Incident exists
+    inc_result = await db.execute(select(models.Incident).where(models.Incident.id == incident_id))
+    incident = inc_result.scalar_one_or_none()
+    if not incident: raise HTTPException(status_code=404, detail="Incident not found")
+
+    # 2. Check Alert exists
+    alert_result = await db.execute(select(models.Alert).where(models.Alert.id == alert_id))
+    alert = alert_result.scalar_one_or_none()
+    if not alert: raise HTTPException(status_code=404, detail="Alert not found")
+
+    # 3. Link them
+    alert.incident_id = incident_id
+    await db.commit()
+    return {"message": "Alert linked to incident"}
 
 # ==========================================
 # REAL-TIME WEBSOCKET ENDPOINT

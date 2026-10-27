@@ -92,6 +92,7 @@ class Alert(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     indicator_id = Column(UUID(as_uuid=True), ForeignKey("indicators.id"), nullable=False)
     rule_id = Column(UUID(as_uuid=True), ForeignKey("alert_rules.id"), nullable=True)
+    incident_id = Column(UUID(as_uuid=True), ForeignKey("incidents.id"), nullable=True) # Added for Incident linking
     severity = Column(String, nullable=False)  # low, medium, high, critical
     status = Column(String, default="new")  # new, acknowledged, in-progress, resolved, closed
     title = Column(String, nullable=False)
@@ -102,6 +103,21 @@ class Alert(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # Relationships (This fixes the AttributeError!)
+    # Relationships
     indicator = relationship("Indicator", backref="alerts")
     rule = relationship("AlertRule", backref="alerts")
+    incident = relationship("Incident", back_populates="alerts") # Added for Incident linking
+
+class Incident(Base):
+    __tablename__ = "incidents"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    status = Column(String, default="open")  # open, investigating, resolved, closed
+    severity = Column(String, default="medium")
+    assigned_to = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationship to alerts
+    alerts = relationship("Alert", back_populates="incident", lazy="selectin")
