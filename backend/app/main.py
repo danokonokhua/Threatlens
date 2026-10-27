@@ -1,3 +1,4 @@
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import selectinload
 from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.security import OAuth2PasswordRequestForm
@@ -20,6 +21,14 @@ from .services.alert_engine import AlertRuleEngine
 from .websocket_manager import manager
 
 app = FastAPI(title="ThreatLens API", version="0.1.0")
+# Allow frontend to communicate with backend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Initialize clients
 redis_client = redis.from_url(settings.REDIS_URL, decode_responses=True)
