@@ -121,6 +121,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: database.A
     return {"access_token": access_token, "token_type": "bearer"}
 
 @app.get("/api/v1/users/me", response_model=schemas.UserResponse)
+@app.get("/api/v1/auth/me", response_model=schemas.UserResponse)
 async def get_me(current_user: models.User = Depends(dependencies.get_current_user)):
     return current_user
 
