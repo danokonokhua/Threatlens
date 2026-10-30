@@ -3,7 +3,13 @@
 import { useEffect, useState } from 'react';
 import { useAlertStream } from '@/hooks/useAlertStream';
 import { SeverityDistribution, AlertTrends, IndicatorTypes } from '@/components/DashboardCharts';
-import { Shield, AlertTriangle, Activity, CheckCircle, Terminal, RefreshCw } from 'lucide-react';
+import { FeedsManager } from '@/components/FeedsManager';
+import { IncidentResponseView } from '@/components/IncidentResponseView';
+import { ThreatHuntingView } from '@/components/ThreatHuntingView';
+import { GlobalAttackHeatmap } from '@/components/GlobalAttackHeatmap';
+import { ExecutiveOverviewView } from '@/components/ExecutiveOverviewView';
+import { ExportReportsCenter } from '@/components/ExportReportsCenter';
+import { Shield, AlertTriangle, Activity, CheckCircle, Terminal, RefreshCw, FolderKanban, Crosshair, ShieldCheck, ArrowDownToLine } from 'lucide-react';
 
 export default function SOC_Dashboard() {
   const { alerts, isConnected } = useAlertStream();
@@ -11,6 +17,7 @@ export default function SOC_Dashboard() {
   const [indicators, setIndicators] = useState<any[]>([]);
   const [allAlerts, setAllAlerts] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<'soc' | 'incident_response' | 'threat_hunting' | 'executive' | 'export_reports'>('soc');
 
   // Fetch data when token is provided
   const fetchData = async () => {
@@ -85,7 +92,76 @@ export default function SOC_Dashboard() {
         </div>
       </div>
 
-      {/* Stats Cards */}
+      {/* View Switcher Navigation */}
+      <div className="flex items-center gap-2 mb-6 border-b border-gray-800 pb-3">
+        <button
+          onClick={() => setActiveTab('soc')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            activeTab === 'soc'
+              ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/30'
+              : 'text-gray-400 hover:text-gray-200 hover:bg-gray-900'
+          }`}
+        >
+          <Shield size={16} />
+          SOC Analyst Dashboard
+        </button>
+        <button
+          onClick={() => setActiveTab('incident_response')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            activeTab === 'incident_response'
+              ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/30'
+              : 'text-gray-400 hover:text-gray-200 hover:bg-gray-900'
+          }`}
+        >
+          <FolderKanban size={16} />
+          Incident Response Workspace (FR-19)
+        </button>
+        <button
+          onClick={() => setActiveTab('threat_hunting')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            activeTab === 'threat_hunting'
+              ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/30'
+              : 'text-gray-400 hover:text-gray-200 hover:bg-gray-900'
+          }`}
+        >
+          <Crosshair size={16} />
+          Threat Hunting Engine (FR-25)
+        </button>
+        <button
+          onClick={() => setActiveTab('executive')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            activeTab === 'executive'
+              ? 'bg-amber-600 text-white shadow-lg shadow-amber-900/30'
+              : 'text-gray-400 hover:text-gray-200 hover:bg-gray-900'
+          }`}
+        >
+          <ShieldCheck size={16} />
+          Executive Overview (CISO)
+        </button>
+        <button
+          onClick={() => setActiveTab('export_reports')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            activeTab === 'export_reports'
+              ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-900/30'
+              : 'text-gray-400 hover:text-gray-200 hover:bg-gray-900'
+          }`}
+        >
+          <ArrowDownToLine size={16} />
+          Exports & Reports (FR-23/24)
+        </button>
+      </div>
+
+      {activeTab === 'executive' ? (
+        <ExecutiveOverviewView token={token} />
+      ) : activeTab === 'incident_response' ? (
+        <IncidentResponseView token={token} />
+      ) : activeTab === 'threat_hunting' ? (
+        <ThreatHuntingView token={token} />
+      ) : activeTab === 'export_reports' ? (
+        <ExportReportsCenter token={token} />
+      ) : (
+        <>
+          {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div className="bg-gray-900 border border-gray-800 p-6 rounded-xl">
           <div className="flex justify-between items-start">
@@ -125,6 +201,12 @@ export default function SOC_Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* Feeds Ingestion & Pipeline Management (FR-01, FR-05) */}
+      <FeedsManager token={token} onFeedsUpdated={fetchData} />
+
+      {/* Global Attack Heatmap & Geo-Density (FR-20) */}
+      <GlobalAttackHeatmap token={token} />
 
       {/* Charts Section */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
@@ -168,6 +250,8 @@ export default function SOC_Dashboard() {
           )}
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 }

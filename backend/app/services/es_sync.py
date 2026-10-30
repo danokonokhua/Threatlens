@@ -93,20 +93,22 @@ async def search_indicators(
     if "must" not in es_query["bool"]:
         es_query["bool"]["must"] = {"match_all": {}}
 
-    response = await es_client.search(
-        index=INDEX_NAME,
-        body={
-            "query": es_query,
-            "size": size,
-            "sort": [{"severity_score": {"order": "desc"}}, {"last_seen": {"order": "desc"}}]
-        }
-    )
-    
-    # Format response
-    hits = response["hits"]["hits"]
-    return [
-        {
-            "id": hit["_id"],
-            **hit["_source"]
-        } for hit in hits
-    ]
+    try:
+        response = await es_client.search(
+            index=INDEX_NAME,
+            body={
+                "query": es_query,
+                "size": size,
+                "sort": [{"severity_score": {"order": "desc"}}, {"last_seen": {"order": "desc"}}]
+            }
+        )
+        hits = response["hits"]["hits"]
+        return [
+            {
+                "id": hit["_id"],
+                **hit["_source"]
+            } for hit in hits
+        ]
+    except Exception as e:
+        print(f"⚠️ Elasticsearch search error: {e}")
+        return []

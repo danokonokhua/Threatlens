@@ -121,6 +121,21 @@ class Incident(Base):
 
     # Relationship to alerts
     alerts = relationship("Alert", back_populates="incident", lazy="selectin")
+    timeline = relationship("IncidentTimeline", back_populates="incident", order_by="IncidentTimeline.timestamp.asc()", lazy="selectin", cascade="all, delete-orphan")
+
+class IncidentTimeline(Base):
+    __tablename__ = "incident_timeline"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    incident_id = Column(UUID(as_uuid=True), ForeignKey("incidents.id", ondelete="CASCADE"), nullable=False)
+    event_type = Column(String, nullable=False) # created, alert_linked, note, containment, status_change
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    source = Column(String, default="system") # system, analyst, detection
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationship
+    incident = relationship("Incident", back_populates="timeline")
 
 class HuntRule(Base):
     __tablename__ = "hunt_rules"
@@ -153,3 +168,13 @@ class HuntMatch(Base):
     # Relationships
     execution = relationship("HuntExecution", back_populates="matches")
     indicator = relationship("Indicator", backref="hunt_matches")
+
+class Report(Base):
+    __tablename__ = "reports"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    title = Column(String, nullable=False)
+    report_type = Column(String, default="executive_summary")  # executive_summary, threat_bulletin, incident_report
+    summary = Column(Text, nullable=False)
+    content_json = Column(Text, nullable=True)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
