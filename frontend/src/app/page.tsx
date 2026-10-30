@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useAlertStream } from '@/hooks/useAlertStream';
 import { SeverityDistribution, AlertTrends, IndicatorTypes } from '@/components/DashboardCharts';
 import { FeedsManager } from '@/components/FeedsManager';
@@ -25,6 +25,23 @@ import {
   UserCheck
 } from 'lucide-react';
 
+// Helper to check if a JWT is still valid (not expired)
+function isTokenValid(jwtStr: string): boolean {
+  if (!jwtStr) return false;
+  try {
+    const parts = jwtStr.split('.');
+    if (parts.length !== 3) return false;
+    // Decode base64 payload safely
+    const payloadJson = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'));
+    const payload = JSON.parse(payloadJson);
+    if (!payload.exp) return true;
+    // Check if token expires at least 30 seconds from now
+    return payload.exp * 1000 > Date.now() + 30000;
+  } catch {
+    return false;
+  }
+}
+
 export default function SOC_Dashboard() {
   const { alerts, isConnected } = useAlertStream();
   const [token, setToken] = useState('');
@@ -35,7 +52,7 @@ export default function SOC_Dashboard() {
   const [activeTab, setActiveTab] = useState<'soc' | 'incident_response' | 'threat_hunting' | 'executive' | 'export_reports'>('soc');
 
   // Automatic demo login with seeded admin credentials
-  const loginAsAdmin = async () => {
+  const loginAsAdmin = useCallback(async (): Promise<string | null> => {
     setIsLoggingIn(true);
     try {
       const formData = new URLSearchParams();
@@ -55,6 +72,7 @@ export default function SOC_Dashboard() {
           if (typeof window !== 'undefined') {
             localStorage.setItem('threatlens_token', data.access_token);
           }
+          return data.access_token;
         }
       }
     } catch (err) {
@@ -62,19 +80,70 @@ export default function SOC_Dashboard() {
     } finally {
       setIsLoggingIn(false);
     }
-  };
+    return null;
+  }, []);
 
-  // Restore saved token from localStorage on first load, or auto-login seamlessly
+  // Fetch data when token is provided, with transparent 401 auto-renewal
+  const fetchData = useCallback(async (tokenToUse?: string) => {
+    const currentToken = tokenToUse || token;
+    if (!currentToken) return;
+
+    setIsLoading(true);
+    try {
+      const headers = { 'Authorization': `Bearer ${currentToken}` };
+      
+      const [indicatorsRes, alertsRes] = await Promise.all([
+        fetch('http://localhost:8000/api/v1/indicators', { headers }),
+        fetch('http://localhost:8000/api/v1/alerts?status_filter=new&limit=100', { headers })
+      ]);
+
+      // If token expired or is invalid, automatically renew session & re-fetch
+      if (indicatorsRes.status === 401 || alertsRes.status === 401) {
+        console.warn('Token expired or unauthorized (401). Auto-renewing session...');
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('threatlens_token');
+        }
+        const freshToken = await loginAsAdmin();
+        if (freshToken) {
+          return fetchData(freshToken);
+        }
+        return;
+      }
+
+      if (indicatorsRes.ok) {
+        const indicatorsData = await indicatorsRes.json();
+        setIndicators(indicatorsData);
+      }
+
+      if (alertsRes.ok) {
+        const alertsData = await alertsRes.json();
+        setAllAlerts(alertsData);
+      }
+    } catch (error) {
+      console.error('Failed to fetch data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [token, loginAsAdmin]);
+
+  // Restore saved token from localStorage on initial load, or auto-login seamlessly
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const savedToken = localStorage.getItem('threatlens_token');
-      if (savedToken) {
+      if (savedToken && isTokenValid(savedToken)) {
         setToken(savedToken);
       } else {
         loginAsAdmin();
       }
     }
-  }, []);
+  }, [loginAsAdmin]);
+
+  // Trigger data fetch whenever token state changes
+  useEffect(() => {
+    if (token) {
+      fetchData(token);
+    }
+  }, [token, fetchData]);
 
   const handleTokenChange = (val: string) => {
     setToken(val);
@@ -95,38 +164,6 @@ export default function SOC_Dashboard() {
     setIndicators([]);
     setAllAlerts([]);
   };
-
-  // Fetch data when token is provided
-  const fetchData = async () => {
-    if (!token) return;
-    setIsLoading(true);
-    try {
-      const headers = { 'Authorization': `Bearer ${token}` };
-      
-      const [indicatorsRes, alertsRes] = await Promise.all([
-        fetch('http://localhost:8000/api/v1/indicators', { headers }),
-        fetch('http://localhost:8000/api/v1/alerts?status_filter=new&limit=100', { headers })
-      ]);
-
-      if (indicatorsRes.ok) {
-        const indicatorsData = await indicatorsRes.json();
-        setIndicators(indicatorsData);
-      }
-
-      if (alertsRes.ok) {
-        const alertsData = await alertsRes.json();
-        setAllAlerts(alertsData);
-      }
-    } catch (error) {
-      console.error('Failed to fetch data:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (token) fetchData();
-  }, [token]);
 
   const getSeverityColor = (severity: string) => {
     switch (severity) {
@@ -165,7 +202,7 @@ export default function SOC_Dashboard() {
             </div>
           ) : (
             <button
-              onClick={loginAsAdmin}
+              onClick={() => loginAsAdmin()}
               disabled={isLoggingIn}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
             >
@@ -184,7 +221,7 @@ export default function SOC_Dashboard() {
               onChange={(e) => handleTokenChange(e.target.value)}
             />
             <button 
-              onClick={fetchData}
+              onClick={() => fetchData()}
               disabled={isLoading || !token}
               title="Refresh Data"
               className="p-1.5 bg-blue-600 hover:bg-blue-700 rounded text-white transition-colors disabled:opacity-50"
@@ -306,7 +343,7 @@ export default function SOC_Dashboard() {
       </div>
 
       {/* Feeds Ingestion & Pipeline Management (FR-01, FR-05) */}
-      <FeedsManager token={token} onFeedsUpdated={fetchData} />
+      <FeedsManager token={token} onFeedsUpdated={() => fetchData()} />
 
       {/* Global Attack Heatmap & Geo-Density (FR-20) */}
       <GlobalAttackHeatmap token={token} />
