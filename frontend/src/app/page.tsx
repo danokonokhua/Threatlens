@@ -9,7 +9,21 @@ import { ThreatHuntingView } from '@/components/ThreatHuntingView';
 import { GlobalAttackHeatmap } from '@/components/GlobalAttackHeatmap';
 import { ExecutiveOverviewView } from '@/components/ExecutiveOverviewView';
 import { ExportReportsCenter } from '@/components/ExportReportsCenter';
-import { Shield, AlertTriangle, Activity, CheckCircle, Terminal, RefreshCw, FolderKanban, Crosshair, ShieldCheck, ArrowDownToLine } from 'lucide-react';
+import { 
+  Shield, 
+  AlertTriangle, 
+  Activity, 
+  CheckCircle, 
+  Terminal, 
+  RefreshCw, 
+  FolderKanban, 
+  Crosshair, 
+  ShieldCheck, 
+  ArrowDownToLine,
+  KeyRound,
+  LogOut,
+  UserCheck
+} from 'lucide-react';
 
 export default function SOC_Dashboard() {
   const { alerts, isConnected } = useAlertStream();
@@ -17,7 +31,70 @@ export default function SOC_Dashboard() {
   const [indicators, setIndicators] = useState<any[]>([]);
   const [allAlerts, setAllAlerts] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [activeTab, setActiveTab] = useState<'soc' | 'incident_response' | 'threat_hunting' | 'executive' | 'export_reports'>('soc');
+
+  // Automatic demo login with seeded admin credentials
+  const loginAsAdmin = async () => {
+    setIsLoggingIn(true);
+    try {
+      const formData = new URLSearchParams();
+      formData.append('username', 'admin@threatlens.local');
+      formData.append('password', 'admin123');
+
+      const res = await fetch('http://localhost:8000/api/v1/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formData.toString()
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.access_token) {
+          setToken(data.access_token);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('threatlens_token', data.access_token);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Auto-login to backend failed:', err);
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  // Restore saved token from localStorage on first load, or auto-login seamlessly
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedToken = localStorage.getItem('threatlens_token');
+      if (savedToken) {
+        setToken(savedToken);
+      } else {
+        loginAsAdmin();
+      }
+    }
+  }, []);
+
+  const handleTokenChange = (val: string) => {
+    setToken(val);
+    if (typeof window !== 'undefined') {
+      if (val) {
+        localStorage.setItem('threatlens_token', val);
+      } else {
+        localStorage.removeItem('threatlens_token');
+      }
+    }
+  };
+
+  const logout = () => {
+    setToken('');
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('threatlens_token');
+    }
+    setIndicators([]);
+    setAllAlerts([]);
+  };
 
   // Fetch data when token is provided
   const fetchData = async () => {
@@ -72,23 +149,49 @@ export default function SOC_Dashboard() {
           <p className="text-gray-400 mt-1">Real-time Cyber Threat Intelligence & Analytics</p>
         </div>
         
-        {/* Auth Token Input */}
-        <div className="flex items-center gap-2 bg-gray-900 p-2 rounded-lg border border-gray-800">
-          <Terminal size={16} className="text-gray-500" />
-          <input 
-            type="password" 
-            placeholder="Paste Bearer Token..." 
-            className="bg-transparent border-none outline-none text-sm w-64 text-gray-300 placeholder-gray-600"
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-          />
-          <button 
-            onClick={fetchData}
-            disabled={isLoading || !token}
-            className="p-2 bg-blue-600 hover:bg-blue-700 rounded text-white transition-colors disabled:opacity-50"
-          >
-            <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
-          </button>
+        {/* Auth Controls & Status */}
+        <div className="flex flex-wrap items-center gap-2">
+          {token ? (
+            <div className="flex items-center gap-2 bg-emerald-950/40 border border-emerald-800/60 px-3 py-1.5 rounded-lg text-xs text-emerald-300">
+              <UserCheck size={14} className="text-emerald-400" />
+              <span>Admin Connected</span>
+              <button 
+                onClick={logout}
+                title="Disconnect / Clear Token"
+                className="ml-1 text-gray-400 hover:text-red-400 transition-colors"
+              >
+                <LogOut size={13} />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={loginAsAdmin}
+              disabled={isLoggingIn}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+            >
+              <KeyRound size={14} className={isLoggingIn ? 'animate-spin' : ''} />
+              <span>{isLoggingIn ? 'Connecting...' : 'Quick Login (Admin)'}</span>
+            </button>
+          )}
+
+          <div className="flex items-center gap-2 bg-gray-900 p-1.5 rounded-lg border border-gray-800">
+            <Terminal size={14} className="text-gray-500 ml-1" />
+            <input 
+              type="password" 
+              placeholder="Paste Bearer Token..." 
+              className="bg-transparent border-none outline-none text-xs w-48 text-gray-300 placeholder-gray-600 font-mono"
+              value={token}
+              onChange={(e) => handleTokenChange(e.target.value)}
+            />
+            <button 
+              onClick={fetchData}
+              disabled={isLoading || !token}
+              title="Refresh Data"
+              className="p-1.5 bg-blue-600 hover:bg-blue-700 rounded text-white transition-colors disabled:opacity-50"
+            >
+              <RefreshCw size={13} className={isLoading ? 'animate-spin' : ''} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -227,11 +330,11 @@ export default function SOC_Dashboard() {
           <span className="text-xs text-gray-500">{alerts.length} recent events</span>
         </div>
 
-        <div className="divide-y divide-gray-800 max-h-[400px] overflow-y-auto">
+        <div className="divide-y border-gray-800 max-h-[400px] overflow-y-auto">
           {alerts.length === 0 ? (
             <div className="p-12 text-center text-gray-500">
               <CheckCircle className="mx-auto mb-3 opacity-50" size={48} />
-              <p>No live alerts yet. Trigger an ingestion in Swagger UI to see real-time updates!</p>
+              <p>No live alerts yet. Trigger an ingestion in Swagger UI or Feeds Manager to see real-time updates!</p>
             </div>
           ) : (
             alerts.map((alert) => (
