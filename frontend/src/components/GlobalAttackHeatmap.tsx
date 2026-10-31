@@ -1,4 +1,6 @@
 'use client';
+import { getApiBaseUrl } from '@/lib/api';
+
 
 import { useState, useEffect } from 'react';
 import { Globe, ShieldAlert, Activity, RefreshCw, Flame, Crosshair } from 'lucide-react';
@@ -33,7 +35,7 @@ export function GlobalAttackHeatmap({ token }: { token: string }) {
     if (!token) return;
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:8000/api/v1/analytics/geo-distribution', {
+      const res = await fetch(`${getApiBaseUrl()}/api/v1/analytics/geo-distribution`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {

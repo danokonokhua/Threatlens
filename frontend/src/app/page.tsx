@@ -1,4 +1,6 @@
 'use client';
+import { getApiBaseUrl } from '@/lib/api';
+
 
 import { useEffect, useState, useCallback } from 'react';
 import { useAlertStream } from '@/hooks/useAlertStream';
@@ -57,7 +59,7 @@ export default function SOC_Dashboard() {
       formData.append('username', 'admin@threatlens.local');
       formData.append('password', 'admin123');
 
-      const res = await fetch('http://localhost:8000/api/v1/auth/login', {
+      const res = await fetch(`${getApiBaseUrl()}/api/v1/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: formData.toString()
@@ -98,8 +100,8 @@ export default function SOC_Dashboard() {
       const headers = { 'Authorization': `Bearer ${currentToken}` };
       
       const [indicatorsRes, alertsRes] = await Promise.all([
-        fetch('http://localhost:8000/api/v1/indicators', { headers }),
-        fetch('http://localhost:8000/api/v1/alerts?status_filter=new&limit=100', { headers })
+        fetch(`${getApiBaseUrl()}/api/v1/indicators`, { headers }),
+        fetch(`${getApiBaseUrl()}/api/v1/alerts?status_filter=new&limit=100`, { headers })
       ]);
 
       // If token expired or is invalid, auto-renew session

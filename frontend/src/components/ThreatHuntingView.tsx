@@ -1,4 +1,6 @@
 'use client';
+import { getApiBaseUrl } from '@/lib/api';
+
 
 import { useState, useEffect } from 'react';
 import { 
@@ -108,7 +110,7 @@ export function ThreatHuntingView({ token }: { token: string }) {
     if (!token) return;
     setLoadingRules(true);
     try {
-      const res = await fetch('http://localhost:8000/api/v1/hunts/rules', {
+      const res = await fetch(`${getApiBaseUrl()}/api/v1/hunts/rules`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
@@ -126,7 +128,7 @@ export function ThreatHuntingView({ token }: { token: string }) {
     if (!token) return;
     setLoadingExecutions(true);
     try {
-      const res = await fetch('http://localhost:8000/api/v1/hunts/executions', {
+      const res = await fetch(`${getApiBaseUrl()}/api/v1/hunts/executions`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
@@ -190,7 +192,7 @@ export function ThreatHuntingView({ token }: { token: string }) {
     e.preventDefault();
     if (!ruleName.trim()) return;
     try {
-      const res = await fetch('http://localhost:8000/api/v1/hunts/rules', {
+      const res = await fetch(`${getApiBaseUrl()}/api/v1/hunts/rules`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

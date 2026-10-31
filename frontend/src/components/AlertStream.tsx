@@ -1,4 +1,6 @@
 'use client';
+import { getWsBaseUrl } from '@/lib/api';
+
 
 import { useEffect, useState } from 'react';
 
@@ -16,7 +18,7 @@ export default function AlertStream() {
 
   useEffect(() => {
     // Connect to WebSocket
-    const ws = new WebSocket('ws://localhost:8000/ws/alerts');
+    const ws = new WebSocket(`${getWsBaseUrl()}/ws/alerts`);
 
     ws.onopen = () => {
       console.log('Connected to alert stream');

@@ -1,4 +1,6 @@
 'use client';
+import { getApiBaseUrl } from '@/lib/api';
+
 
 import { useState } from 'react';
 import { 
@@ -127,7 +129,7 @@ export function AuthModal({ isOpen, onClose, currentUser, onLoginSuccess }: Auth
       formData.append('username', loginEmail);
       formData.append('password', loginPass);
 
-      const res = await fetch('http://localhost:8000/api/v1/auth/login', {
+      const res = await fetch(`${getApiBaseUrl()}/api/v1/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: formData.toString()
@@ -144,7 +146,7 @@ export function AuthModal({ isOpen, onClose, currentUser, onLoginSuccess }: Auth
       // Fetch user profile from /api/v1/users/me
       let userProfile: UserProfile = { email: loginEmail, role: 'soc_analyst' };
       try {
-        const meRes = await fetch('http://localhost:8000/api/v1/users/me', {
+        const meRes = await fetch(`${getApiBaseUrl()}/api/v1/users/me`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         if (meRes.ok) {
@@ -195,7 +197,7 @@ export function AuthModal({ isOpen, onClose, currentUser, onLoginSuccess }: Auth
     setIsLoading(true);
     setErrorMsg(null);
     try {
-      const meRes = await fetch('http://localhost:8000/api/v1/users/me', {
+      const meRes = await fetch(`${getApiBaseUrl()}/api/v1/users/me`, {
         headers: { 'Authorization': `Bearer ${devToken.trim()}` }
       });
       if (!meRes.ok) throw new Error('Token is invalid or expired (401)');

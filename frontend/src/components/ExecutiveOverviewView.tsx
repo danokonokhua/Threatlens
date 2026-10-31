@@ -1,4 +1,6 @@
 'use client';
+import { getApiBaseUrl } from '@/lib/api';
+
 
 import { useState, useEffect } from 'react';
 import { 
@@ -55,7 +57,7 @@ export function ExecutiveOverviewView({ token }: { token: string }) {
     if (!token) return;
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:8000/api/v1/analytics/executive-posture', {
+      const res = await fetch(`${getApiBaseUrl()}/api/v1/analytics/executive-posture`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {

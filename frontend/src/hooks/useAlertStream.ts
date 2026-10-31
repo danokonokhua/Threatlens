@@ -1,3 +1,4 @@
+import { getWsBaseUrl } from '@/lib/api';
 import { useEffect, useState } from 'react';
 
 export interface LiveAlert {
@@ -13,7 +14,7 @@ export function useAlertStream() {
   const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
-    const ws = new WebSocket('ws://localhost:8000/ws/alerts');
+    const ws = new WebSocket(`${getWsBaseUrl()}/ws/alerts`);
 
     ws.onopen = () => {
       console.log('✅ WebSocket Connected to Alert Stream');

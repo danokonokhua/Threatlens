@@ -1,4 +1,6 @@
 'use client';
+import { getApiBaseUrl } from '@/lib/api';
+
 
 import { useState, useEffect } from 'react';
 import { 
@@ -65,7 +67,7 @@ export function ExportReportsCenter({ token }: { token: string }) {
     if (!token) return;
     setLoadingReports(true);
     try {
-      const res = await fetch('http://localhost:8000/api/v1/reports', {
+      const res = await fetch(`${getApiBaseUrl()}/api/v1/reports`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
@@ -135,7 +137,7 @@ export function ExportReportsCenter({ token }: { token: string }) {
     e.preventDefault();
     setGeneratingReport(true);
     try {
-      const res = await fetch('http://localhost:8000/api/v1/reports', {
+      const res = await fetch(`${getApiBaseUrl()}/api/v1/reports`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

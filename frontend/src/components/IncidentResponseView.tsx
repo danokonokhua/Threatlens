@@ -1,4 +1,6 @@
 'use client';
+import { getApiBaseUrl } from '@/lib/api';
+
 
 import { useState, useEffect } from 'react';
 import { 
@@ -78,7 +80,7 @@ export function IncidentResponseView({ token }: { token: string }) {
     setLoading(true);
     try {
       const url = statusFilter === 'all' 
-        ? 'http://localhost:8000/api/v1/incidents' 
+        ? `${getApiBaseUrl()}/api/v1/incidents` 
         : `http://localhost:8000/api/v1/incidents?status_filter=${statusFilter}`;
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` }
@@ -129,7 +131,7 @@ export function IncidentResponseView({ token }: { token: string }) {
     e.preventDefault();
     if (!newTitle.trim()) return;
     try {
-      const res = await fetch('http://localhost:8000/api/v1/incidents', {
+      const res = await fetch(`${getApiBaseUrl()}/api/v1/incidents`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -224,7 +226,7 @@ export function IncidentResponseView({ token }: { token: string }) {
 
   const fetchUnlinkedAlerts = async () => {
     try {
-      const res = await fetch('http://localhost:8000/api/v1/alerts?limit=50', {
+      const res = await fetch(`${getApiBaseUrl()}/api/v1/alerts?limit=50`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {

@@ -1,4 +1,6 @@
 'use client';
+import { getApiBaseUrl } from '@/lib/api';
+
 
 import { useState, useEffect } from 'react';
 import { Rss, RefreshCw, CheckCircle2, XCircle, Database, Play, Power } from 'lucide-react';
@@ -29,7 +31,7 @@ export function FeedsManager({ token, onFeedsUpdated }: FeedsManagerProps) {
     if (!token) return;
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:8000/api/v1/feeds', {
+      const res = await fetch(`${getApiBaseUrl()}/api/v1/feeds`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
@@ -87,7 +89,7 @@ export function FeedsManager({ token, onFeedsUpdated }: FeedsManagerProps) {
     setSyncingAll(true);
     setStatusMessage('Triggering ingestion across all active feeds...');
     try {
-      const res = await fetch('http://localhost:8000/api/v1/feeds/ingest/all', {
+      const res = await fetch(`${getApiBaseUrl()}/api/v1/feeds/ingest/all`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` }
       });
