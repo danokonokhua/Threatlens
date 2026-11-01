@@ -1,0 +1,215 @@
+# INTERNSHIP CAPSTONE PROJECT REPORT
+
+**Program:** Internmo Software Engineering & Cybersecurity Internship  
+**Project:** ThreatLens — Enterprise Cyber Threat Intelligence (CTI) & SOC Analytics Platform  
+**Client / Case Study:** Sentinova Security Systems  
+**Intern / Lead Engineer:** Daniel Okonokhua  
+**Date:** November 2026  
+**GitHub Repository:** [https://github.com/danokonokhua/Threatlens](https://github.com/danokonokhua/Threatlens)  
+**Production Stack:** FastAPI (Python 3.11), Next.js 16 (React 19 / Turbopack), PostgreSQL 15, Redis 7, Elasticsearch 8.11, Docker Compose
+
+---
+
+## 1. Executive Summary
+
+In contemporary Security Operations Centres (SOCs), cyber defense teams suffer not from a shortage of threat data, but from an overwhelming surplus of fragmented, uncontextualized telemetry. Mid-sized security teams subscribe to numerous open-source and commercial threat feeds, resulting in acute alert fatigue, delayed mean time to detect (MTTD), and disjointed escalation handoffs.
+
+As part of the **Internmo Internship Program**, I developed **ThreatLens** — an enterprise-grade Cyber Threat Intelligence (CTI) and real-time security analytics platform engineered for Sentinova Security Systems. ThreatLens ingests, normalizes, deduplicates, and enriches indicators of compromise (IOCs) across 7 global threat feeds, applies a deterministic confidence-weighted severity scoring engine (0–100), and surfaces actionable intelligence across role-tailored workspaces for SOC Analysts, Incident Responders, Threat Hunters, and CISOs.
+
+The platform was delivered in full compliance with the Sentinova Product Requirements Document (PRD), implementing all 29 Functional Requirements (**FR-01 through FR-29**), non-functional reliability standards (**NFR-01 through NFR-12**), role-based access control (RBAC), and industry standards including **STIX 2.1**, **TAXII 2.1**, and the **MITRE ATT&CK** matrix.
+
+---
+
+## 2. System Architecture & High-Level Design
+
+ThreatLens is architected as an event-driven, microservices-based system containerized via Docker.
+
+```mermaid
+flowchart TD
+    subgraph Data Sources ["Ingestion Tier (FR-01, FR-02)"]
+        F1["ThreatFox (Abuse.ch)"]
+        F2["CISA KEV"]
+        F3["AlienVault OTX"]
+        F4["OpenPhish"]
+        F5["URLhaus"]
+        F6["Feodo Tracker"]
+        F7["MalwareBazaar"]
+    end
+
+    subgraph Core Engine ["Processing & API Gateway (FastAPI)"]
+        Norm["Canonical Normalizer & Deduplicator"]
+        Score["Severity Scoring Engine (0-100)"]
+        AlertEng["Alert Rule Engine"]
+        ES_Sync["Elasticsearch Sync Worker"]
+        AuthRBAC["OAuth2 JWT & RBAC Middleware"]
+        Audit["Immutable Audit Logger (FR-27)"]
+    end
+
+    subgraph Storage ["Persistence & Cache Tier"]
+        PG[("PostgreSQL 15<br/>Relational Schema & Audits")]
+        RD[("Redis 7<br/>Pub/Sub & Cache")]
+        ES[("Elasticsearch 8.11<br/>Faceted Threat Search")]
+    end
+
+    subgraph Client ["Presentation Tier (Next.js 16 / React 19)"]
+        SOC["SOC Analyst Hub"]
+        IR["Incident Response Workspace"]
+        TH["Threat Hunting Engine"]
+        Exec["Executive CISO Overview"]
+        Export["STIX 2.1 & Reports Center"]
+    end
+
+    Data Sources --> Norm
+    Norm --> Score
+    Score --> AlertEng
+    AlertEng --> RD
+    Score --> PG
+    Score --> ES_Sync
+    ES_Sync --> ES
+    RD -.->|"Real-Time WebSocket Stream"| Client
+    Client <-->|"OAuth2 REST API"| AuthRBAC
+    AuthRBAC --> Audit
+    Audit --> PG
+```
+
+### Architectural Tiers:
+1. **Ingestion & Normalization Tier**: Decoupled async HTTP pollers ingesting STIX 2.1, JSON, and CSV payloads from 7 live threat feeds into a standardized canonical indicator schema.
+2. **Analysis & Storage Tier**: 
+   - **PostgreSQL 15**: Primary relational datastore holding normalized indicators, feeds, provenance records, alerts, incidents, timeline logs, and immutable audit logs.
+   - **Elasticsearch 8.11**: Distributed full-text search engine powering sub-second faceted queries across millions of IOCs.
+   - **Redis 7**: Dual-purpose low-latency cache for enrichment verdicts and Pub/Sub event broker for real-time alert dispatch.
+3. **API & Real-Time Gateway (FastAPI)**: Versioned REST endpoints (`/api/v1`) with Pydantic validation, OAuth2 password bearer tokens, RBAC permission decorators, and WebSocket gateway.
+4. **Presentation Tier (Next.js 16 / Tailwind CSS / Recharts)**: Single Page Application (SPA) offering specialized interfaces tailored to the four primary operational personas.
+
+---
+
+## 3. PRD Functional Requirements & Feature Implementation
+
+### 3.1 Multi-Feed Aggregation & Canonical Normalization (FR-01 – FR-05)
+* **7 Integrated Threat Intelligence Feeds**:
+  1. **ThreatFox (Abuse.ch)**: API-driven C2 IP, domain, and malicious payload tracker.
+  2. **CISA Known Exploited Vulnerabilities (KEV)**: Catalog of active enterprise CVE exploits.
+  3. **AlienVault OTX**: Open Threat Exchange community pulse indicators.
+  4. **OpenPhish**: Real-time phishing URL and targeted brand stream.
+  5. **URLhaus**: Malicious URL distribution tracking.
+  6. **Feodo Tracker**: Botnet C2 infrastructure (QakBot, Emotet, Dridex).
+  7. **MalwareBazaar**: Malware sample SHA-256 and MD5 hashes.
+* **Normalization Engine**: Transforms disparate source schemas into a unified representation (`id`, `value`, `type`, `severity_score`, `confidence`, `status`, `first_seen`, `last_seen`).
+* **Deduplication & Provenance (FR-03)**: Indicator collisions are merged to a single canonical record while appending source citations into `indicator_sources`.
+* **Feeds Manager UI (FR-05)**: Allows security engineers to toggle feed ingestion schedules, view ingestion telemetry, and trigger on-demand synchronization.
+
+### 3.2 Confidence-Weighted Scoring & Enrichment (FR-10 – FR-14)
+* **Deterministic Severity Scoring Formula (FR-13)**:
+  $$\text{Severity Score} = (\text{Base} \times 0.40) + (\text{Confidence} \times 0.30) + (\text{Recency} \times 0.20) + (\text{Multi-Source Agreement} \times 0.10)$$
+  * *Recency Factor*: Decays linearly over a 30-day half-life window.
+  * *Multi-Source Agreement*: Rewards multi-vendor correlation (capped at 5 sources).
+* **Specialized Threat Analysis Endpoints**:
+  * `GET /api/v1/reputation/ip/{ip}` (FR-10): Returns ASN attribution, ISP, autonomous system name, and abuse confidence ratios.
+  * `GET /api/v1/domains/{domain}/analysis` (FR-11): Analyzes Shannon entropy, Domain Generation Algorithm (DGA) signatures, and phishing indicators.
+  * `GET /api/v1/hash/{sha256}` (FR-12): Displays antivirus multi-engine detection ratios (e.g., $64/72$ engines positive) and malware family attribution.
+  * `POST /api/v1/indicators/{id}/enrich`: On-demand IOC enrichment cached in Redis for 24 hours.
+
+### 3.3 Real-Time Alert Engine & Geo-Density Analytics (FR-15 – FR-21)
+* **Real-time Alert Pipeline**: Redis Pub/Sub listener monitors newly scored indicators. Detections exceeding severity thresholds automatically publish to connected WebSocket clients (`ws://host/ws/alerts`).
+* **Alert Lifecycle Management (FR-18)**: Complete state progression (`new` $\rightarrow$ `acknowledged` $\rightarrow$ `in-progress` $\rightarrow$ `resolved` $\rightarrow$ `closed`) with user attribution.
+* **Global Attack Heatmap (FR-20)**: Interactive SVG equirectangular world map displaying geopolitical attack origins, adversary infrastructure clusters, and top target rankings.
+* **Visual Telemetry Charts (FR-21)**: Recharts-powered area charts (30-day exposure), bar charts (7-day alert throughput), and indicator type distribution donuts.
+
+### 3.4 Role-Specific Operational Workspaces (Section 11)
+* **SOC Analyst Hub**: Primary triage center monitoring high-risk indicators, active alerts, and real-time WebSocket telemetry.
+* **Incident Response Workspace (Lead: Daniel Okafor / FR-19)**:
+  * Manages formal enterprise incident cases.
+  * **Immutable Append-Only Incident Timeline**: Chronological forensic log recording evidence discoveries, indicator linkages, and mitigation actions.
+  * Interactive **Containment Checklist** (host isolation, C2 IP blocking, credential revocation, forensic memory capture).
+* **Threat Hunting Engine (Lead: Mei Lin Tan / FR-25)**:
+  * Sub-second faceted search querying Elasticsearch over indexed indicators.
+  * Live query execution latency metric (measured in milliseconds).
+  * Pre-built hunt rule library mapped to **MITRE ATT&CK** techniques (`T1566 Phishing`, `T1071 Application Layer C2`, `T1190 Exploit Public-Facing App`).
+* **Executive Overview (Lead: Rachel Adeyemi, CISO)**:
+  * High-level Organizational Risk Score ($0-100$).
+  * Enterprise exposure trend analytics.
+  * One-click **CISO Board Briefing Generator** providing synthesized executive summaries ready for corporate distribution.
+
+### 3.5 Interoperability, Exports & SIEM Integration (FR-23, FR-24, FR-29)
+* **STIX 2.1 Standard Export (FR-24)**: Generates OASIS-compliant STIX 2.1 JSON bundles encapsulating `indicator`, `attack-pattern`, and `relationship` SDOs.
+* **CSV Exports & On-Demand PDF Reports (FR-23)**: Instant data extraction for SIEM ingestion and offline reporting.
+* **Inbound SIEM/EDR Webhook Hook (FR-29)**: `POST /api/v1/integrations/webhook` accepts incoming alerts from CrowdStrike, Splunk, or Microsoft Sentinel, automatically correlating telemetry against the internal IOC database.
+
+### 3.6 Enterprise Authentication, RBAC & Audit Compliance (Section 13, FR-26, FR-27, FR-28)
+* **OAuth2 Authentication & Session Persistence**:
+  * 30-day JWT Bearer tokens stored in browser `localStorage`.
+  * Transparent self-healing: automatically renews sessions upon 401 response without session loss.
+* **6 Seeded PRD Role Personas (Section 11)**:
+  1. **Marcus Vance**: `admin@threatlens.local` (Administrator — Full Platform Authority)
+  2. **Daniel Okafor**: `responder@threatlens.local` (Incident Responder — Timelines & Containment)
+  3. **Mei Lin Tan**: `hunter@threatlens.local` (Threat Hunter — Faceted Pivots & Rules)
+  4. **Rachel Adeyemi**: `executive@threatlens.local` (Executive / CISO — Risk Posture & Briefings)
+  5. **Kavita Patel**: `engineer@threatlens.local` (Security Engineer — Feeds & Pipeline Health)
+  6. **SOC Analyst**: `analyst@threatlens.local` (Tier 1/2 Analyst — Triage & Enrichment)
+* **Immutable Audit Trail (FR-27)**: `models.AuditLog` table permanently captures actor ID, action, resource, timestamp, and details for every authentication and state-changing action.
+
+---
+
+## 4. Engineering Challenges & Technical Solutions
+
+| Challenge Encountered | Technical Root Cause | Engineering Solution Implemented |
+| :--- | :--- | :--- |
+| **Docker Windows File Lock Conflict** | Turbopack in Next.js 16 failed with `Permission denied (os error 13)` attempting to acquire lockfiles across the Windows-to-Linux volume mount. | Configured an anonymous container volume for `/app/.next` in `docker-compose.yml`, isolating native ext4 file operations inside Linux. |
+| **Uvicorn File Watcher Deadlock** | WatchFiles Rust I/O error on Windows host filesystem caused Uvicorn socket churn, leaving Docker port proxy in `FIN_WAIT_1`. | Cleared socket locks, stabilized WatchFiles parameters, and containerized backend startup scripts. |
+| **JWT Session Expiration Friction** | 30-minute JWT expiry caused browser requests to return 401, wiping the user's dashboard view upon refresh. | Extended token lifetime to 30 days, integrated `isTokenValid()` expiration decoding, and added automatic 401 session recovery. |
+| **Cloud Deployment Host Discrepancy** | Hardcoded `localhost:8000` URLs prevented deployment to remote cloud VPS / Oracle Cloud IPs. | Built `getApiBaseUrl()` and `getWsBaseUrl()` dynamic resolvers in `frontend/src/lib/api.ts` utilizing `window.location.hostname` with CORS regex support. |
+
+---
+
+## 5. Testing & Quality Assurance (NFR-08)
+
+To satisfy **NFR-08** ($\ge 80\%$ test coverage on core scoring, correlation, and ingestion modules), a test suite was established using **Pytest**:
+
+* `test_scoring.py`: Validates deterministic 0–100 score calculations across boundary conditions and recency decay.
+* `test_normalizers.py`: Tests parsing resilience against malformed JSON, CSV, and STIX payloads across all 7 feeds.
+* `test_rbac.py`: Verifies role-based access restrictions, ensuring lower-tier roles cannot invoke administrative feed endpoints.
+* `test_audit.py`: Confirms that authentication and alert updates generate append-only audit log records.
+* `test_stix_export.py`: Validates schema conformance of generated STIX 2.1 bundles.
+* **Continuous Integration**: Configured `.github/workflows/test.yml` enforcing automated testing and TypeScript type-checking on every pull request to `main`.
+
+---
+
+## 6. Deployment Architecture
+
+The entire ThreatLens platform runs in isolated multi-container orchestration:
+
+```text
+[tl-frontend]       Port 3000   (Next.js 16 SPA, Turbopack, Tailwind CSS)
+[tl-backend]        Port 8000   (FastAPI, Uvicorn, Python 3.11, Pydantic)
+[tl-postgres]       Port 5432   (PostgreSQL 15 Alpine, Relational Store)
+[tl-redis]          Port 6379   (Redis 7 Alpine, Pub/Sub & Cache)
+[tl-elasticsearch]  Port 9200   (Elasticsearch 8.11, Distributed Search)
+```
+
+The stack is designed for single-command deployment on any Linux or cloud server (such as Oracle Cloud Free Tier or AWS):
+```bash
+git clone https://github.com/danokonokhua/Threatlens.git
+cd Threatlens
+docker compose up -d
+docker exec tl-backend python -m app.seed
+```
+
+---
+
+## 7. Key Learning Outcomes & Professional Growth
+
+Participating in the Internmo Internship Program and architecting ThreatLens provided extensive hands-on experience in full-lifecycle software engineering and cybersecurity:
+1. **Defensive Cyber Operations**: Deepened expertise in threat intelligence lifecycles, adversary TTP mapping (MITRE ATT&CK), and incident containment protocols.
+2. **Distributed Systems Engineering**: Built resilient event-driven architectures utilizing Redis Pub/Sub, WebSockets, and Elasticsearch indexing under high-volume ingestion.
+3. **Enterprise API Design**: Developed robust, self-documenting FastAPI architectures with OAuth2 security, strict Pydantic schemas, and immutable auditing for compliance.
+4. **DevOps & Container Orchestration**: Resolved cross-platform containerization hurdles, volume locking, and network bridge routing on production-ready environments.
+
+---
+
+## 8. Conclusion
+
+The ThreatLens project stands as a fully realized, enterprise-grade Cyber Threat Intelligence platform delivered in accordance with all Sentinova PRD requirements. Through clean architecture, proactive security controls, and intuitive role-based user interfaces, ThreatLens equips modern SOCs to transform raw indicator streams into decisive defensive action.
+
+**Submitted By:** Daniel Okonokhua  
+**Internship Organization:** Internmo  
+**Project Repository:** [https://github.com/danokonokhua/Threatlens](https://github.com/danokonokhua/Threatlens)
