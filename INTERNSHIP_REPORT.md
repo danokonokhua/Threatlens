@@ -26,7 +26,7 @@ ThreatLens is architected as an event-driven, microservices-based system contain
 
 ```mermaid
 flowchart TD
-    subgraph Data Sources ["Ingestion Tier (FR-01, FR-02)"]
+    subgraph DataSources ["Ingestion Tier (FR-01, FR-02)"]
         F1["ThreatFox (Abuse.ch)"]
         F2["CISA KEV"]
         F3["AlienVault OTX"]
@@ -36,7 +36,7 @@ flowchart TD
         F7["MalwareBazaar"]
     end
 
-    subgraph Core Engine ["Processing & API Gateway (FastAPI)"]
+    subgraph CoreEngine ["Processing & API Gateway (FastAPI)"]
         Norm["Canonical Normalizer & Deduplicator"]
         Score["Severity Scoring Engine (0-100)"]
         AlertEng["Alert Rule Engine"]
@@ -45,13 +45,13 @@ flowchart TD
         Audit["Immutable Audit Logger (FR-27)"]
     end
 
-    subgraph Storage ["Persistence & Cache Tier"]
+    subgraph StorageTier ["Persistence & Cache Tier"]
         PG[("PostgreSQL 15<br/>Relational Schema & Audits")]
         RD[("Redis 7<br/>Pub/Sub & Cache")]
         ES[("Elasticsearch 8.11<br/>Faceted Threat Search")]
     end
 
-    subgraph Client ["Presentation Tier (Next.js 16 / React 19)"]
+    subgraph ClientTier ["Presentation Tier (Next.js 16 / React 19)"]
         SOC["SOC Analyst Hub"]
         IR["Incident Response Workspace"]
         TH["Threat Hunting Engine"]
@@ -59,15 +59,15 @@ flowchart TD
         Export["STIX 2.1 & Reports Center"]
     end
 
-    Data Sources --> Norm
+    DataSources --> Norm
     Norm --> Score
     Score --> AlertEng
     AlertEng --> RD
     Score --> PG
     Score --> ES_Sync
     ES_Sync --> ES
-    RD -.->|"Real-Time WebSocket Stream"| Client
-    Client <-->|"OAuth2 REST API"| AuthRBAC
+    RD -.->|"Real-Time WebSocket Stream"| ClientTier
+    ClientTier <-->|"OAuth2 REST API"| AuthRBAC
     AuthRBAC --> Audit
     Audit --> PG
 ```
